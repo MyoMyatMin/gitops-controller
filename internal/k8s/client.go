@@ -6,16 +6,21 @@ import (
 	"os"
 	"path/filepath"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 type Client struct {
 	clientset *kubernetes.Clientset
 	dynamic   dynamic.Interface
+	mapper    meta.RESTMapper
 }
 
 func NewClient(kubeconfig string) (*Client, error) {
@@ -51,9 +56,20 @@ func NewClient(kubeconfig string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create dynamic client: %v", err)
 	}
+
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("error creating discovery client: %w", err)
+	}
+
+	cachedDiscovery := memory.NewMemCacheClient(discoveryClient)
+
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(cachedDiscovery)
+
 	return &Client{
 		clientset: clientset,
 		dynamic:   dynamic,
+		mapper:    mapper,
 	}, nil
 }
 

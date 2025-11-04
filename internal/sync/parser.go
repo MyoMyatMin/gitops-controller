@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.yaml.in/yaml/v2"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 type Manifest struct {
@@ -18,43 +18,10 @@ type Manifest struct {
 	Object    *unstructured.Unstructured
 }
 
-func ParseYAML(data []byte) ([]Manifest, error) {
-	var manifests []Manifest
-
-	docs := strings.Split(string(data), "\n---\n") // why --- here? bcuz multi-doc YAML separator
-
-	for _, docData := range docs {
-		docData = strings.TrimSpace(docData)
-		if docData == "" {
-			continue
-		}
-
-		obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
-
-		if err := yaml.Unmarshal([]byte(docData), &obj.Object); err != nil {
-			return nil, err
-		}
-
-		if obj.GetKind() == "" || obj.GetAPIVersion() == "" || obj.GetName() == "" {
-			continue
-		}
-
-		manifests = append(manifests, Manifest{
-			Kind:      obj.GetKind(),
-			Name:      obj.GetName(),
-			Namespace: obj.GetNamespace(),
-			Object:    obj,
-		})
-
-	}
-
-	return manifests, nil
-}
-
 func ParseManifests(dirPath string) ([]Manifest, error) {
 	var allManifests []Manifest
 
-	fmt.Printf("Parsing manifests in directory: %s\n", dirPath)
+	fmt.Printf("Starting to parse manifests in: %s\n", dirPath)
 
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -72,26 +39,60 @@ func ParseManifests(dirPath string) ([]Manifest, error) {
 
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			fmt.Printf("Warning: skipping file %s (read error: %v)\n", path, err)
+			return nil
 		}
 
 		manifests, err := ParseYAML(data)
 		if err != nil {
-			fmt.Printf("Warning: skipping file %s (read error: %v)\n", path, err)
+			fmt.Printf("Warning: skipping file %s (parse error: %v)\n", path, err)
 			return nil
 		}
 
 		for i := range manifests {
 			manifests[i].FilePath = path
 		}
-
 		allManifests = append(allManifests, manifests...)
+
 		return nil
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error walking directory %s: %w", dirPath, err)
 	}
 
+	fmt.Printf("Finished parsing. Found %d manifests.\n", len(allManifests))
 	return allManifests, nil
+}
+
+func ParseYAML(data []byte) ([]Manifest, error) {
+	var manifests []Manifest
+
+	docs := strings.Split(string(data), "\n---\n")
+
+	for _, docData := range docs {
+
+		docData = strings.TrimSpace(docData)
+		if docData == "" {
+			continue
+		}
+
+		obj := &unstructured.Unstructured{Object: make(map[string]interface{})}
+		if err := yaml.Unmarshal([]byte(docData), &obj.Object); err != nil {
+			return nil, fmt.Errorf("error unmarshaling YAML: %w", err)
+		}
+
+		if obj.GetKind() == "" || obj.GetAPIVersion() == "" || obj.GetName() == "" {
+			continue
+		}
+
+		manifests = append(manifests, Manifest{
+			Kind:      obj.GetKind(),
+			Name:      obj.GetName(),
+			Namespace: obj.GetNamespace(),
+			Object:    obj,
+		})
+	}
+
+	return manifests, nil
 }
