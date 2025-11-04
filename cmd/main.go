@@ -3,26 +3,17 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	// Use your module path
 	"github.com/MyoMyatMin/gitops-controller/internal/git"
-	"github.com/MyoMyatMin/gitops-controller/internal/k8s"
+	"github.com/MyoMyatMin/gitops-controller/internal/sync"
 )
 
 func main() {
 	fmt.Println("GitOps Controller Starting")
-	k8sClient, err := k8s.NewClient("")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating Kubernetes client: %v\n", err)
-		os.Exit(1)
-	}
 
-	err = k8sClient.ListNamespaces()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error listing namespaces: %v\n", err)
-		os.Exit(1)
-	}
-
-	testRepoURL := "https://github.com/kubernetes/examples.git"
+	testRepoURL := "https://github.com/argoproj/argocd-example-apps.git"
 	testRepoBranch := "master"
 	localPath := "/tmp/gitops-test-repo"
 
@@ -35,37 +26,50 @@ func main() {
 		Branch:    testRepoBranch,
 	}
 
-	fmt.Println("\n--- Testing Clone ---")
 	if err := repo.Clone(); err != nil {
 		fmt.Printf("Error cloning repository: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Println("\n--- Repository cloned successfully ---")
 
-	fmt.Println("\n--- Testing GetLatestCommit ---")
-	sha1, err := repo.GetLatestCommit()
+	fmt.Printf("\n--- Listing contents of %s ---\n", localPath)
+	entries, err := os.ReadDir(localPath)
 	if err != nil {
-		fmt.Printf("Error getting commit: %v\n", err)
+		fmt.Printf("Error reading directory: %v\n", err)
+	} else {
+		fmt.Println("Directories in repo:")
+		for _, entry := range entries {
+			if entry.IsDir() && entry.Name()[0] != '.' {
+				fmt.Printf("  - %s\n", entry.Name())
+			}
+		}
+	}
+	manifestPath := filepath.Join(localPath, "guestbook")
+
+	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+		fmt.Printf("\nError: Manifest path does not exist: %s\n", manifestPath)
+		fmt.Println("Please check the available directories listed above.")
 		os.Exit(1)
 	}
 
-	fmt.Println("\n--- Testing Pull ---")
-	if err := repo.Pull(); err != nil {
-		fmt.Printf("Error pulling repository: %v\n", err)
-		os.Exit(1)
-	}
+	fmt.Printf("\n--- Parsing manifests in: %s ---\n", manifestPath)
 
-	fmt.Println("\n--- Testing GetLatestCommit (after pull) ---")
-	sha2, err := repo.GetLatestCommit()
+	manifests, err := sync.ParseManifests(manifestPath)
 	if err != nil {
-		fmt.Printf("Error getting commit: %v\n", err)
+		fmt.Printf("Error parsing manifests: %v\n", err)
 		os.Exit(1)
 	}
 
-	if sha1 != sha2 {
-		fmt.Println("WARN: Commit SHA changed between clone and pull, which is fine.")
+	if len(manifests) == 0 {
+		fmt.Println("No manifests found.")
+	} else {
+		fmt.Printf("\nSuccessfully parsed %d manifests:\n", len(manifests))
+		for _, m := range manifests {
+			fmt.Printf("- File: %s, Kind: %s, Name: %s\n",
+				filepath.Base(m.FilePath), m.Kind, m.Name)
+		}
 	}
 
-	fmt.Printf("\nTest successful. Cloned repo at %s. Exiting.\n", localPath)
+	fmt.Println(" Test successful. Exiting.")
 	os.Exit(0)
-
 }
