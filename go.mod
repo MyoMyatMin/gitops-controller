@@ -4,9 +4,9 @@ go 1.24.2
 
 require (
 	github.com/go-git/go-git/v5 v5.16.3
-	go.yaml.in/yaml/v2 v2.4.2
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -44,6 +44,7 @@ require (
 	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
@@ -64,5 +65,4 @@ require (
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )

@@ -17,6 +17,12 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+const (
+	// This is the label we will add to all resources we manage
+	ManagedByLabel = "app.kubernetes.io/managed-by"
+	FieldManager   = "gitops-controller"
+)
+
 type Client struct {
 	clientset *kubernetes.Clientset
 	dynamic   dynamic.Interface

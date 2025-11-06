@@ -6,20 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 )
 
-type Manifest struct {
-	FilePath  string
-	Kind      string
-	Name      string
-	Namespace string
-	Object    *unstructured.Unstructured
-}
-
-func ParseManifests(dirPath string) ([]Manifest, error) {
-	var allManifests []Manifest
+func ParseManifests(dirPath string) ([]manifest.Manifest, error) {
+	var allManifests []manifest.Manifest
 
 	fmt.Printf("Starting to parse manifests in: %s\n", dirPath)
 
@@ -65,8 +58,8 @@ func ParseManifests(dirPath string) ([]Manifest, error) {
 	return allManifests, nil
 }
 
-func ParseYAML(data []byte) ([]Manifest, error) {
-	var manifests []Manifest
+func ParseYAML(data []byte) ([]manifest.Manifest, error) {
+	var manifests []manifest.Manifest
 
 	docs := strings.Split(string(data), "\n---\n")
 
@@ -86,7 +79,7 @@ func ParseYAML(data []byte) ([]Manifest, error) {
 			continue
 		}
 
-		manifests = append(manifests, Manifest{
+		manifests = append(manifests, manifest.Manifest{
 			Kind:      obj.GetKind(),
 			Name:      obj.GetName(),
 			Namespace: obj.GetNamespace(),

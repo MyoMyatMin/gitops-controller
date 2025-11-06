@@ -5,17 +5,27 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/MyoMyatMin/gitops-controller/internal/sync"
+	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
-func (c *Client) Apply(manifest sync.Manifest, dryRun bool) error {
+func (c *Client) Apply(manifest manifest.Manifest, dryRun bool) error {
 
 	obj := manifest.Object
 	if obj == nil {
 		return fmt.Errorf("manifest object is nil for %s", manifest.Name)
 	}
+
+	labels := obj.GetLabels()
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	// --- FIX 1 ---
+	// Use the constant, not a hardcoded string
+	labels[ManagedByLabel] = FieldManager
+	obj.SetLabels(labels)
+
 	resourceInterface, err := c.getResourceInterface(manifest)
 	if err != nil {
 		return err
@@ -26,10 +36,8 @@ func (c *Client) Apply(manifest sync.Manifest, dryRun bool) error {
 		return fmt.Errorf("failed to marshal object %s/%s: %v", manifest.Namespace, manifest.Name, err)
 	}
 
-	fieldManager := "gitops-controller"
-
 	patchOptions := metav1.PatchOptions{
-		FieldManager: fieldManager,
+		FieldManager: FieldManager, // Use constant here too
 		Force:        boolPtr(true),
 	}
 
@@ -41,8 +49,10 @@ func (c *Client) Apply(manifest sync.Manifest, dryRun bool) error {
 		fmt.Printf("Applying: Kind=%s, Name=%s, Namespace=%s\n",
 			obj.GetKind(), obj.GetName(), obj.GetNamespace())
 	}
-	fmt.Printf("Applying: Kind=%s Name=%s Namespace=%s\n",
-		obj.GetKind(), obj.GetName(), obj.GetNamespace())
+
+	// --- FIX 2 ---
+	// This line was a duplicate and printed twice. Remove it.
+	// fmt.Printf("Applying: Kind=%s Name=%s Namespace=%s\n", ...)
 
 	_, err = resourceInterface.Patch(
 		context.TODO(),

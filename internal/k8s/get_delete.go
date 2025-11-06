@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MyoMyatMin/gitops-controller/internal/sync"
+	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 )
 
-func (c *Client) getResourceInterface(manifest sync.Manifest) (dynamic.ResourceInterface, error) {
+func (c *Client) getResourceInterface(manifest manifest.Manifest) (dynamic.ResourceInterface, error) {
 	obj := manifest.Object
 	gvk := obj.GroupVersionKind()
 
@@ -29,7 +29,7 @@ func (c *Client) getResourceInterface(manifest sync.Manifest) (dynamic.ResourceI
 	return resourceInterface, nil
 }
 
-func (c *Client) Get(manifest sync.Manifest) (*unstructured.Unstructured, error) {
+func (c *Client) Get(manifest manifest.Manifest) (*unstructured.Unstructured, error) {
 	resourceInterface, err := c.getResourceInterface(manifest)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func (c *Client) Get(manifest sync.Manifest) (*unstructured.Unstructured, error)
 	return resourceInterface.Get(context.TODO(), manifest.Name, metav1.GetOptions{})
 }
 
-func (c *Client) Delete(manifest sync.Manifest) error {
+func (c *Client) Delete(manifest manifest.Manifest) error {
 	resourceInterface, err := c.getResourceInterface(manifest)
 	if err != nil {
 		return err
