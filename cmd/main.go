@@ -3,13 +3,15 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/MyoMyatMin/gitops-controller/internal/git"
 	"github.com/MyoMyatMin/gitops-controller/internal/k8s"
 	"github.com/MyoMyatMin/gitops-controller/internal/sync"
 	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
-
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -34,7 +36,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	targetNamespace := "guestbook-prod"
+	targetNamespace := "guestbook-poller"
 	targetPath := "guestbook"
 
 	if err := ensureNamespace(k8sClient, targetNamespace); err != nil {
@@ -43,32 +45,33 @@ func main() {
 			os.Exit(1)
 		}
 	}
-
 	engine := sync.NewEngine(repo, k8sClient, targetNamespace, targetPath)
 
-	fmt.Println("\n\n--- RUNNING FIRST SYNC (CREATE) ---")
-	result1, err := engine.Sync()
-	if err != nil {
-		fmt.Printf("Error on first sync: %v\n", err)
-		os.Exit(1)
-	}
-	printSyncResult(result1)
+	pollInterval := 10 * time.Second
+	poller := sync.NewPoller(engine, pollInterval)
 
-	fmt.Println("\n\n--- RUNNING SECOND SYNC (NO-OP) ---")
-	result2, err := engine.Sync()
-	if err != nil {
-		fmt.Printf("Error on second sync: %v\n", err)
-		os.Exit(1)
-	}
-	printSyncResult(result2)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Println("\n--- Test complete! ---")
-	fmt.Printf("Run 'kubectl -n %s get all' to see the app.\n", targetNamespace)
-	fmt.Printf("Run 'kubectl delete ns %s' to clean up.\n", targetNamespace)
+	go poller.Start()
+
+	<-sigCh
+
+	poller.Stop()
+
+	fmt.Println("Main application shut down gracefully.")
+
+	fmt.Printf("Cleaning up namespace %s...\n", targetNamespace)
+
+	if err := deleteNamespace(k8sClient, targetNamespace); err != nil {
+		fmt.Println("Warning: failed to clean up namespace.")
+	}
 }
 
 func ensureNamespace(c *k8s.Client, name string) error {
 	nsManifest := manifest.Manifest{
+		Kind: "Namespace",
+		Name: name,
 		Object: &unstructured.Unstructured{
 			Object: map[string]interface{}{
 				"apiVersion": "v1",
@@ -80,14 +83,17 @@ func ensureNamespace(c *k8s.Client, name string) error {
 	return c.Apply(nsManifest, false)
 }
 
-func printSyncResult(r *sync.SyncResult) {
-	fmt.Printf("Sync to commit %s complete.\n", r.CommitSHA)
-	fmt.Printf("- Updated: %d\n", len(r.Updated))
-	fmt.Printf("- Deleted: %d\n", len(r.Deleted))
-	if len(r.Errors) > 0 {
-		fmt.Printf("- Errors: %d\n", len(r.Errors))
-		for _, e := range r.Errors {
-			fmt.Printf("  - %v\n", e)
-		}
+func deleteNamespace(c *k8s.Client, name string) error {
+	nsManifest := manifest.Manifest{
+		Kind: "Namespace",
+		Name: name,
+		Object: &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Namespace",
+				"metadata":   map[string]interface{}{"name": name},
+			},
+		},
 	}
+	return c.Delete(nsManifest)
 }
