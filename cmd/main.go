@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/MyoMyatMin/gitops-controller/internal/api"
 	"github.com/MyoMyatMin/gitops-controller/internal/git"
 	"github.com/MyoMyatMin/gitops-controller/internal/k8s"
 	"github.com/MyoMyatMin/gitops-controller/internal/sync"
@@ -36,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	targetNamespace := "guestbook-poller"
+	targetNamespace := "guestbook-webhook"
 	targetPath := "guestbook"
 
 	if err := ensureNamespace(k8sClient, targetNamespace); err != nil {
@@ -50,10 +52,21 @@ func main() {
 	pollInterval := 10 * time.Second
 	poller := sync.NewPoller(engine, pollInterval)
 
+	go poller.Start()
+
+	webhookSecret := "mywebhooksecret"
+	webhookServer := api.NewWebhookServer(engine, webhookSecret)
+
+	go func() {
+		if err := webhookServer.Start(8080); err != nil {
+			log.Fatalf("Webhook server failed: %v\n", err)
+		}
+	}()
+	fmt.Println("Webhook server is running on http://localhost:8080/webhook")
+	fmt.Printf("Test with: curl -X POST http://localhost:8080/webhook -d '{\"ref\":\"refs/heads/master\"}' -H 'X-Hub-Signature-256: sha256=...' \n")
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-
-	go poller.Start()
 
 	<-sigCh
 

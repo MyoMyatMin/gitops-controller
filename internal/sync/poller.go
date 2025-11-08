@@ -52,7 +52,7 @@ func (p *Poller) Start() {
 			if err != nil {
 				fmt.Printf("Sync failed: %v\n", err)
 			} else {
-				printSyncResult(result)
+				printSyncResult(*result)
 			}
 
 			p.lastCommitSHA = latestSHA
@@ -72,7 +72,7 @@ func (p *Poller) Stop() {
 	fmt.Println("Poller stopped.")
 }
 
-func printSyncResult(r *SyncResult) {
+func printSyncResult(r SyncResult) {
 	fmt.Printf("Sync to commit %s complete.\n", r.CommitSHA)
 	fmt.Printf("- Updated: %d\n", len(r.Updated))
 	fmt.Printf("- Deleted: %d\n", len(r.Deleted))
