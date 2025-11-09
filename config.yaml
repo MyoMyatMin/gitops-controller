@@ -1,0 +1,18 @@
+git:
+  url: "https://github.com/argoproj/argocd-example-apps.git"
+  branch: "master"
+  path: "guestbook"
+  localPath: "/tmp/gitops-controller-repo"
+
+kubernetes:
+  namespace: "guestbook-prod"
+  kubeconfig: ""
+
+sync:
+  interval: 60s
+  prune: true # Not implemented yet, but in our config
+
+webhook:
+  enabled: true
+  port: 8080
+  secret: "my-very-secret-key"
