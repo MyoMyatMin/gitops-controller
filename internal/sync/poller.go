@@ -1,9 +1,11 @@
 package sync
 
 import (
-	"fmt"
 	"sync"
 	"time"
+
+	"github.com/MyoMyatMin/gitops-controller/internal/log"
+	"github.com/sirupsen/logrus"
 )
 
 type Poller struct {
@@ -24,62 +26,58 @@ func NewPoller(engine *Engine, interval time.Duration) *Poller {
 }
 
 func (p *Poller) Start() {
-	fmt.Printf("Starting poller: checking for updates every %s\n", p.interval)
+
+	log.Infof("Starting poller: checking for updates every %s", p.interval)
 
 	p.wg.Add(1)
 	defer p.wg.Done()
-
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
-			fmt.Println("Polling for changes....")
-
+			log.Info("Polling for changes....")
 			latestSHA, err := p.engine.gitRepo.GetLatestCommit()
 			if err != nil {
-				fmt.Printf("Error getting latest commit: %v\n", err)
+				log.Errorf("Error checking git commit: %v", err)
 				continue
 			}
 
 			if p.lastCommitSHA != "" && p.lastCommitSHA == latestSHA {
-				fmt.Println("No new commits found.")
+				log.Info("No new commits found.")
 				continue
 			}
 
-			fmt.Printf("New commit %s found (was %s). Starting to sync.\n", latestSHA, p.lastCommitSHA)
+			log.WithFields(logrus.Fields{
+				"new_commit": latestSHA,
+				"old_commit": p.lastCommitSHA,
+			}).Info("New commit found. Starting to sync.")
+
 			result, err := p.engine.Sync()
 			if err != nil {
-				fmt.Printf("Sync failed: %v\n", err)
+				log.Errorf("Sync failed: %v", err)
 			} else {
-				printSyncResult(*result)
+				// --- REPLACED printSyncResult ---
+				log.WithFields(logrus.Fields{
+					"commit":  result.CommitSHA,
+					"updated": len(result.Updated),
+					"deleted": len(result.Deleted),
+					"errors":  len(result.Errors),
+				}).Info("Sync complete")
 			}
-
 			p.lastCommitSHA = latestSHA
 
 		case <-p.stopCh:
-			fmt.Println("Stopping poller.")
-			ticker.Stop()
+			log.Info("Stopping poller.")
 			return
 		}
 	}
 }
 
 func (p *Poller) Stop() {
-	fmt.Println("Sending stop signal to poller...")
+	log.Info("Sending stop signal to poller...")
 	close(p.stopCh)
 	p.wg.Wait()
-	fmt.Println("Poller stopped.")
-}
-
-func printSyncResult(r SyncResult) {
-	fmt.Printf("Sync to commit %s complete.\n", r.CommitSHA)
-	fmt.Printf("- Updated: %d\n", len(r.Updated))
-	fmt.Printf("- Deleted: %d\n", len(r.Deleted))
-	if len(r.Errors) > 0 {
-		fmt.Printf("- Errors: %d\n", len(r.Errors))
-		for _, e := range r.Errors {
-			fmt.Printf("  - %v\n", e)
-		}
-	}
+	log.Info("Poller stopped successfully.")
 }

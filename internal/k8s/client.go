@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/MyoMyatMin/gitops-controller/internal/log"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
@@ -18,7 +19,6 @@ import (
 )
 
 const (
-	// This is the label we will add to all resources we manage
 	ManagedByLabel = "app.kubernetes.io/managed-by"
 	FieldManager   = "gitops-controller"
 )
@@ -80,15 +80,16 @@ func NewClient(kubeconfig string) (*Client, error) {
 }
 
 func (c *Client) ListNamespaces() error {
-	fmt.Println("Attempting to list namespaces...")
+	log.Info("Attempting to list namespaces...")
 	namespaces, err := c.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
+		log.Errorf("error listing namespaces: %v", err)
 		return fmt.Errorf("error listing namespaces: %w", err)
 	}
 
-	fmt.Println("Successfully connected to cluster. Found namespaces:")
+	log.Info("Successfully connected to cluster. Found namespaces:")
 	for _, ns := range namespaces.Items {
-		fmt.Printf("- %s\n", ns.Name)
+		log.Infof("- %s", ns.Name)
 	}
 
 	return nil
@@ -98,5 +99,5 @@ func homeDir() string {
 	if h := os.Getenv("HOME"); h != "" {
 		return h
 	}
-	return os.Getenv("USERPROFILE") // windows
+	return os.Getenv("USERPROFILE")
 }

@@ -1,14 +1,13 @@
 package main
 
 import (
-	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 
 	"github.com/MyoMyatMin/gitops-controller/internal/config"
+	"github.com/MyoMyatMin/gitops-controller/internal/log"
 
 	"github.com/MyoMyatMin/gitops-controller/internal/api"
 	"github.com/MyoMyatMin/gitops-controller/internal/git"
@@ -19,7 +18,9 @@ import (
 )
 
 func main() {
-	fmt.Println("GitOps Controller Starting")
+
+	log.Init()
+	log.Info("GitOps Controller starting")
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -28,8 +29,7 @@ func main() {
 
 	k8sClient, err := k8s.NewClient(cfg.Kubernetes.Kubeconfig)
 	if err != nil {
-		fmt.Printf("Error creating Kubernetes client: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Error creating Kubernetes client: %v", err)
 	}
 
 	repo := &git.Repository{
@@ -39,8 +39,7 @@ func main() {
 	}
 	os.RemoveAll(repo.LocalPath)
 	if err := repo.Clone(); err != nil {
-		fmt.Printf("Error cloning repository: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Error cloning repository: %v", err)
 	}
 
 	targetNamespace := cfg.Kubernetes.Namespace
@@ -48,8 +47,7 @@ func main() {
 
 	if err := ensureNamespace(k8sClient, targetNamespace); err != nil {
 		if !strings.Contains(err.Error(), "already exists") {
-			fmt.Printf("Error ensuring namespace: %v\n", err)
-			os.Exit(1)
+			log.Fatalf("Error ensuring namespace: %v", err)
 		}
 	}
 	engine := sync.NewEngine(repo, k8sClient, targetNamespace, targetPath)
@@ -65,9 +63,9 @@ func main() {
 				log.Fatalf("Webhook server failed: %v\n", err)
 			}
 		}()
-		fmt.Printf("Webhook server enabled on port %d\n", cfg.Webhook.Port)
+		log.Infof("Webhook server enabled on port %d", cfg.Webhook.Port)
 	} else {
-		fmt.Println("Webhook server is disabled in config.")
+		log.Infof("Webhook server is disabled in config.")
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -76,11 +74,11 @@ func main() {
 
 	poller.Stop()
 
-	fmt.Println("Main application shut down gracefully.")
+	log.Info("Main application shut down gracefully")
 
-	fmt.Printf("Cleaning up namespace %s...\n", targetNamespace)
+	log.Infof("Cleaning up namespace %s...", targetNamespace)
 	if err := deleteNamespace(k8sClient, targetNamespace); err != nil {
-		fmt.Printf("Warning: failed to clean up namespace: %v\n", err)
+		log.Warnf("Warning: failed to clean up namespace: %v", err)
 	}
 }
 

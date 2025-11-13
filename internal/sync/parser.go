@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MyoMyatMin/gitops-controller/internal/log"
 	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
@@ -14,47 +15,39 @@ import (
 func ParseManifests(dirPath string) ([]manifest.Manifest, error) {
 	var allManifests []manifest.Manifest
 
-	fmt.Printf("Starting to parse manifests in: %s\n", dirPath)
+	log.Infof("Starting to parse manifests in: %s", dirPath)
 
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, walkErr error) error {
 
-		if info.IsDir() {
-			return nil
-		}
-
-		ext := filepath.Ext(path)
-		if ext != ".yaml" && ext != ".yml" {
+		if walkErr != nil {
+			log.Warnf("Skipping file %s (walk error: %v)", path, walkErr)
 			return nil
 		}
 
 		data, err := os.ReadFile(path)
 		if err != nil {
-			fmt.Printf("Warning: skipping file %s (read error: %v)\n", path, err)
+
+			log.Warnf("Skipping file %s (read error: %v)", path, err)
 			return nil
 		}
 
 		manifests, err := ParseYAML(data)
 		if err != nil {
-			fmt.Printf("Warning: skipping file %s (parse error: %v)\n", path, err)
+
+			log.Warnf("Skipping file %s (parse error: %v)", path, err)
 			return nil
 		}
 
-		for i := range manifests {
-			manifests[i].FilePath = path
-		}
 		allManifests = append(allManifests, manifests...)
-
 		return nil
 	})
 
 	if err != nil {
+		log.Errorf("error walking directory %s: %v", dirPath, err)
 		return nil, fmt.Errorf("error walking directory %s: %w", dirPath, err)
 	}
 
-	fmt.Printf("Finished parsing. Found %d manifests.\n", len(allManifests))
+	log.Infof("Finished parsing. Found %d manifests.", len(allManifests))
 	return allManifests, nil
 }
 

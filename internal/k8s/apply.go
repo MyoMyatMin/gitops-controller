@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/MyoMyatMin/gitops-controller/internal/log"
 	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
+	"github.com/sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
 func (c *Client) Apply(manifest manifest.Manifest, dryRun bool) error {
-
 	obj := manifest.Object
 	if obj == nil {
+		log.Errorf("manifest object is nil for %s", manifest.Name)
 		return fmt.Errorf("manifest object is nil for %s", manifest.Name)
 	}
 
@@ -21,8 +23,6 @@ func (c *Client) Apply(manifest manifest.Manifest, dryRun bool) error {
 	if labels == nil {
 		labels = make(map[string]string)
 	}
-	// --- FIX 1 ---
-	// Use the constant, not a hardcoded string
 	labels[ManagedByLabel] = FieldManager
 	obj.SetLabels(labels)
 
@@ -33,26 +33,27 @@ func (c *Client) Apply(manifest manifest.Manifest, dryRun bool) error {
 
 	data, err := json.Marshal(obj)
 	if err != nil {
-		return fmt.Errorf("failed to marshal object %s/%s: %v", manifest.Namespace, manifest.Name, err)
+		log.Errorf("error marshaling object to JSON for %s: %v", obj.GetName(), err)
+		return fmt.Errorf("error marshaling object to JSON for %s: %w", obj.GetName(), err)
 	}
 
 	patchOptions := metav1.PatchOptions{
-		FieldManager: FieldManager, // Use constant here too
+		FieldManager: FieldManager,
 		Force:        boolPtr(true),
+	}
+
+	logFields := logrus.Fields{
+		"kind":      obj.GetKind(),
+		"name":      obj.GetName(),
+		"namespace": obj.GetNamespace(),
 	}
 
 	if dryRun {
 		patchOptions.DryRun = []string{metav1.DryRunAll}
-		fmt.Printf("Dry-Run Applying: Kind=%s, Name=%s, Namespace=%s\n",
-			obj.GetKind(), obj.GetName(), obj.GetNamespace())
+		log.WithFields(logFields).Info("Dry-Run Applying resource")
 	} else {
-		fmt.Printf("Applying: Kind=%s, Name=%s, Namespace=%s\n",
-			obj.GetKind(), obj.GetName(), obj.GetNamespace())
+		log.WithFields(logFields).Info("Applying resource")
 	}
-
-	// --- FIX 2 ---
-	// This line was a duplicate and printed twice. Remove it.
-	// fmt.Printf("Applying: Kind=%s Name=%s Namespace=%s\n", ...)
 
 	_, err = resourceInterface.Patch(
 		context.TODO(),
@@ -61,8 +62,10 @@ func (c *Client) Apply(manifest manifest.Manifest, dryRun bool) error {
 		data,
 		patchOptions,
 	)
+
 	if err != nil {
-		return fmt.Errorf("failed to apply object %s/%s: %v", manifest.Namespace, manifest.Name, err)
+		log.WithFields(logFields).Errorf("Error applying resource: %v", err)
+		return err
 	}
 
 	return nil

@@ -6,6 +6,7 @@ import (
 
 	"github.com/MyoMyatMin/gitops-controller/internal/git"
 	"github.com/MyoMyatMin/gitops-controller/internal/k8s"
+	"github.com/MyoMyatMin/gitops-controller/internal/log"
 	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -35,58 +36,65 @@ func NewEngine(repo *git.Repository, client *k8s.Client, ns, path string) *Engin
 }
 
 func (e *Engine) Sync() (*SyncResult, error) {
-	fmt.Println("--- Starting Sync ---")
+	// --- CHANGED ---
+	log.Info("--- Starting Sync ---")
 	result := &SyncResult{}
 
 	if err := e.gitRepo.Pull(); err != nil {
-		return nil, fmt.Errorf("error pulling latest changes: %w", err)
+		log.Errorf("error pulling git repo: %v", err)
+		return nil, fmt.Errorf("error pulling git repo: %w", err)
 	}
 	commitSHA, err := e.gitRepo.GetLatestCommit()
 	if err != nil {
-		return nil, fmt.Errorf("error getting latest commit SHA: %w", err)
+		log.Errorf("error getting commit SHA: %v", err)
+		return nil, fmt.Errorf("error getting commit SHA: %w", err)
 	}
-
 	result.CommitSHA = commitSHA
-	fmt.Printf("Syncing to commit: %s\n", commitSHA)
+	log.Infof("Syncing to commit: %s", commitSHA)
 
 	manifestDir := filepath.Join(e.gitRepo.LocalPath, e.repoPath)
 	gitManifests, err := ParseManifests(manifestDir)
 	if err != nil {
+		log.Errorf("error parsing manifests: %v", err)
 		return nil, fmt.Errorf("error parsing manifests: %w", err)
 	}
 
-	clusterResouces, err := e.k8sClient.ListManagedResources(e.namespace)
+	clusterResources, err := e.k8sClient.ListManagedResources(e.namespace)
 	if err != nil {
+		log.Errorf("error listing managed resources: %v", err)
 		return nil, fmt.Errorf("error listing managed resources: %w", err)
 	}
-	toApply, toDelete := e.diff(gitManifests, clusterResouces)
 
-	fmt.Printf("--- Applying %d manifests ---\n", len(toApply))
+	toApply, toDelete := e.diff(gitManifests, clusterResources)
+
+	log.Infof("--- Applying %d resources ---", len(toApply))
 	for _, m := range toApply {
 		m.Object.SetNamespace(e.namespace)
+		m.Namespace = e.namespace
+
 		if err := e.k8sClient.Apply(m, false); err != nil {
-			result.Errors = append(result.Errors, fmt.Errorf("error applying %s/%s: %w", m.Namespace, m.Name, err))
-
+			result.Errors = append(result.Errors, err)
 		} else {
-			result.Updated = append(result.Updated, fmt.Sprintf("%s/%s", m.Namespace, m.Name))
+			result.Updated = append(result.Updated, m.Name)
 		}
 	}
 
-	fmt.Printf("--- Pruning %d resources ---\n", len(toDelete))
-	for _, r := range toDelete {
-		manifest := manifest.Manifest{
-			Object:    &r,
-			Name:      r.GetName(),
-			Kind:      r.GetKind(),
-			Namespace: r.GetNamespace(),
+	log.Infof("--- Pruning %d resources ---", len(toDelete))
+	for _, res := range toDelete {
+		m := manifest.Manifest{
+			Object:    &res,
+			Kind:      res.GetKind(),
+			Name:      res.GetName(),
+			Namespace: res.GetNamespace(),
 		}
-		if err := e.k8sClient.Delete(manifest); err != nil {
-			result.Errors = append(result.Errors, fmt.Errorf("error pruning %s/%s: %w", manifest.Namespace, manifest.Name, err))
+		if err := e.k8sClient.Delete(m); err != nil {
+			result.Errors = append(result.Errors, err)
 		} else {
-			result.Deleted = append(result.Deleted, fmt.Sprintf("%s/%s", manifest.Namespace, manifest.Name))
+			result.Deleted = append(result.Deleted, m.Name)
 		}
 	}
-	fmt.Println("--- Sync Complete ---")
+
+	log.Info("--- Sync Complete ---")
 	return result, nil
 }
 
