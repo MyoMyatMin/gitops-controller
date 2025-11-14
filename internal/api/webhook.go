@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 
 	"github.com/MyoMyatMin/gitops-controller/internal/log"
 	"github.com/MyoMyatMin/gitops-controller/internal/sync"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,11 +33,21 @@ func (s *WebhookServer) Start(port int) error {
 	log.Infof("Starting webhook server on port %d...", port)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/webhook", s.handleGitHubWebhook)
+
+	mux.Handle("/metrics", promhttp.Handler())
+	mux.HandleFunc("/health", s.handleHealth)
+
+	mux.HandleFunc("/ready", s.handleHealth)
+
 	return http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
 }
 
+func (s *WebhookServer) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("OK"))
+}
 func (s *WebhookServer) handleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
-	// --- CHANGED ---
+
 	if r.Method != http.MethodPost {
 		log.Warnf("Invalid webhook method: %s", r.Method)
 		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)

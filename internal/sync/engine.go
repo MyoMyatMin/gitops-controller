@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/MyoMyatMin/gitops-controller/internal/metrics"
+
 	"github.com/MyoMyatMin/gitops-controller/internal/git"
 	"github.com/MyoMyatMin/gitops-controller/internal/k8s"
 	"github.com/MyoMyatMin/gitops-controller/internal/log"
 	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -36,16 +39,22 @@ func NewEngine(repo *git.Repository, client *k8s.Client, ns, path string) *Engin
 }
 
 func (e *Engine) Sync() (*SyncResult, error) {
-	// --- CHANGED ---
+
 	log.Info("--- Starting Sync ---")
+
+	syncTimer := prometheus.NewTimer(metrics.SyncDuration)
+	defer syncTimer.ObserveDuration()
+
 	result := &SyncResult{}
 
 	if err := e.gitRepo.Pull(); err != nil {
+		metrics.SyncTotal.WithLabelValues("failure").Inc()
 		log.Errorf("error pulling git repo: %v", err)
 		return nil, fmt.Errorf("error pulling git repo: %w", err)
 	}
 	commitSHA, err := e.gitRepo.GetLatestCommit()
 	if err != nil {
+		metrics.SyncTotal.WithLabelValues("failure").Inc()
 		log.Errorf("error getting commit SHA: %v", err)
 		return nil, fmt.Errorf("error getting commit SHA: %w", err)
 	}
@@ -55,12 +64,14 @@ func (e *Engine) Sync() (*SyncResult, error) {
 	manifestDir := filepath.Join(e.gitRepo.LocalPath, e.repoPath)
 	gitManifests, err := ParseManifests(manifestDir)
 	if err != nil {
+		metrics.SyncTotal.WithLabelValues("failure").Inc()
 		log.Errorf("error parsing manifests: %v", err)
 		return nil, fmt.Errorf("error parsing manifests: %w", err)
 	}
 
 	clusterResources, err := e.k8sClient.ListManagedResources(e.namespace)
 	if err != nil {
+		metrics.SyncTotal.WithLabelValues("failure").Inc()
 		log.Errorf("error listing managed resources: %v", err)
 		return nil, fmt.Errorf("error listing managed resources: %w", err)
 	}
@@ -76,6 +87,7 @@ func (e *Engine) Sync() (*SyncResult, error) {
 			result.Errors = append(result.Errors, err)
 		} else {
 			result.Updated = append(result.Updated, m.Name)
+			metrics.ResourceManaged.WithLabelValues("applied", m.Kind).Inc()
 		}
 	}
 
@@ -91,7 +103,15 @@ func (e *Engine) Sync() (*SyncResult, error) {
 			result.Errors = append(result.Errors, err)
 		} else {
 			result.Deleted = append(result.Deleted, m.Name)
+			metrics.ResourceManaged.WithLabelValues("deleted", m.Kind).Inc()
 		}
+	}
+
+	if len(result.Errors) > 0 {
+		metrics.SyncTotal.WithLabelValues("failure").Inc()
+	} else {
+		metrics.SyncTotal.WithLabelValues("success").Inc()
+		metrics.LastSyncTimestamp.SetToCurrentTime()
 	}
 
 	log.Info("--- Sync Complete ---")
