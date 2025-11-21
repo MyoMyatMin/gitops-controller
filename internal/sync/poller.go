@@ -29,6 +29,12 @@ func (p *Poller) Start() {
 
 	log.Infof("Starting poller: checking for updates every %s", p.interval)
 
+	retryConfig := RetryConfig{
+		MaxRetries:   5,
+		InitialDelay: 2 * time.Second,
+		MaxDelay:     30 * time.Second,
+	}
+
 	p.wg.Add(1)
 	defer p.wg.Done()
 	ticker := time.NewTicker(p.interval)
@@ -54,11 +60,11 @@ func (p *Poller) Start() {
 				"old_commit": p.lastCommitSHA,
 			}).Info("New commit found. Starting to sync.")
 
-			result, err := p.engine.Sync()
+			result, err := p.engine.SyncWithRetry(retryConfig)
 			if err != nil {
 				log.Errorf("Sync failed: %v", err)
 			} else {
-				// --- REPLACED printSyncResult ---
+
 				log.WithFields(logrus.Fields{
 					"commit":  result.CommitSHA,
 					"updated": len(result.Updated),
@@ -66,7 +72,9 @@ func (p *Poller) Start() {
 					"errors":  len(result.Errors),
 				}).Info("Sync complete")
 			}
-			p.lastCommitSHA = latestSHA
+			if err == nil {
+				p.lastCommitSHA = latestSHA
+			}
 
 		case <-p.stopCh:
 			log.Info("Stopping poller.")

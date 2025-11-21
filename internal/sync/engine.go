@@ -3,13 +3,14 @@ package sync
 import (
 	"fmt"
 	"path/filepath"
-
-	"github.com/MyoMyatMin/gitops-controller/internal/metrics"
+	"time"
 
 	"github.com/MyoMyatMin/gitops-controller/internal/git"
 	"github.com/MyoMyatMin/gitops-controller/internal/k8s"
 	"github.com/MyoMyatMin/gitops-controller/internal/log"
+	"github.com/MyoMyatMin/gitops-controller/internal/metrics"
 	"github.com/MyoMyatMin/gitops-controller/pkg/manifest"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
@@ -27,6 +28,12 @@ type SyncResult struct {
 	Updated   []string
 	Deleted   []string
 	Errors    []error
+}
+
+type RetryConfig struct {
+	MaxRetries   uint64
+	InitialDelay time.Duration
+	MaxDelay     time.Duration
 }
 
 func NewEngine(repo *git.Repository, client *k8s.Client, ns, path string) *Engine {
@@ -136,4 +143,28 @@ func (e *Engine) diff(gitManifests []manifest.Manifest, clusterResources []unstr
 	}
 
 	return toApply, toDelete
+}
+
+func (e *Engine) SyncWithRetry(cfg RetryConfig) (*SyncResult, error) {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = cfg.InitialDelay
+	b.MaxInterval = cfg.MaxDelay
+
+	retryPolicy := backoff.WithMaxRetries(b, cfg.MaxRetries)
+
+	var syncResult *SyncResult
+	var syncErr error
+
+	op := func() error {
+		syncResult, syncErr = e.Sync()
+		return syncErr
+	}
+
+	err := backoff.Retry(op, retryPolicy)
+	if err != nil {
+		log.Errorf("Sync failed after %d retries: %v", cfg.MaxRetries, err)
+		return nil, err
+	}
+
+	return syncResult, nil
 }
