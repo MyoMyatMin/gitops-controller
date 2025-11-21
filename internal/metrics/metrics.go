@@ -34,6 +34,12 @@ var (
 			Help: "Timestamp of the last successful sync operation",
 		},
 	)
+
+	DriftDetected = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "gitops_drift_detected",
+			Help: "Indicates if configuration drift is detected.",
+		})
 )
 
 func Register() {

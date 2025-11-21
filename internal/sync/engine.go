@@ -114,6 +114,16 @@ func (e *Engine) Sync() (*SyncResult, error) {
 		}
 	}
 
+	hasDrift, driftReasons := DetectDrift(gitManifests, clusterResources)
+	if hasDrift {
+		metrics.DriftDetected.Set(1)
+		for _, reason := range driftReasons {
+			log.Warnf("Drift Detected: %s", reason)
+		}
+	} else {
+		metrics.DriftDetected.Set(0)
+		log.Info("No drift detected.")
+	}
 	if len(result.Errors) > 0 {
 		metrics.SyncTotal.WithLabelValues("failure").Inc()
 	} else {
