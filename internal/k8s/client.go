@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	ManagedByLabel = "app.kubernetes.io/managed-by"
-	FieldManager   = "gitops-controller"
+	ManagedByLabel  = "app.kubernetes.io/managed-by"
+	FieldManager    = "gitops-controller"
+	PruneAnnotation = "gitops-controller/prune"
 )
 
 type Client struct {

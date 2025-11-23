@@ -148,6 +148,12 @@ func (e *Engine) diff(gitManifests []manifest.Manifest, clusterResources []unstr
 	for _, res := range clusterResources {
 		key := fmt.Sprintf("%s/%s/%s", res.GetKind(), res.GetNamespace(), res.GetName())
 		if _, exists := gitManifestsMap[key]; !exists {
+
+			annotations := res.GetAnnotations()
+			if value, ok := annotations[k8s.PruneAnnotation]; ok && value == "false" {
+				log.Warnf("Skipping prune for %s/%s due to annotation", res.GetKind(), res.GetName())
+				continue
+			}
 			toDelete = append(toDelete, res)
 		}
 	}
