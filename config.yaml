@@ -1,18 +1,25 @@
-git:
-  url: "https://github.com/argoproj/argocd-example-apps.git"
-  branch: "master"
-  path: "guestbook"
-  localPath: "/tmp/gitops-controller-repo"
-
+# Global Settings
 kubernetes:
-  namespace: "guestbook-prod"
   kubeconfig: ""
-
-sync:
-  interval: 60s
-  prune: true # Not implemented yet, but in our config
 
 webhook:
   enabled: true
   port: 8080
   secret: "my-very-secret-key"
+
+repositories:
+  - name: "payments-team"
+    url: "https://github.com/MyoMyatMin/payments-api-mock.git"
+    branch: "main"
+    path: "manifests"
+    namespace: "prod-backend"
+    interval: 60s
+    prune: true
+
+  - name: "frontend-team"
+    url: "https://github.com/MyoMyatMin/marketing-site-mock.git"
+    branch: "main"
+    path: "k8s"
+    namespace: "prod-frontend"
+    interval: 60s
+    prune: true

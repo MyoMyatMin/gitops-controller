@@ -18,14 +18,14 @@ import (
 )
 
 type WebhookServer struct {
-	engine *sync.Engine
-	secret string
+	engines []*sync.Engine
+	secret  string
 }
 
-func NewWebhookServer(engine *sync.Engine, secret string) *WebhookServer {
+func NewWebhookServer(engines []*sync.Engine, secret string) *WebhookServer {
 	return &WebhookServer{
-		engine: engine,
-		secret: secret,
+		engines: engines,
+		secret:  secret,
 	}
 }
 
@@ -90,17 +90,14 @@ func (s *WebhookServer) handleGitHubWebhook(w http.ResponseWriter, r *http.Reque
 	log.WithFields(logFields).Info("--- Valid GitHub webhook received! Triggering sync. ---")
 
 	go func() {
-		result, err := s.engine.Sync()
-		if err != nil {
-			log.Errorf("Webhook-triggered sync failed: %v", err)
-		} else {
-
-			log.WithFields(logrus.Fields{
-				"commit":  result.CommitSHA,
-				"updated": len(result.Updated),
-				"deleted": len(result.Deleted),
-				"errors":  len(result.Errors),
-			}).Info("Webhook-triggered sync successful.")
+		for _, engine := range s.engines {
+			_, err := engine.Sync()
+			if err != nil {
+				log.Errorf("Webhook-triggered sync failed: %v", err)
+			} else {
+				log.Info("Webhook-triggered sync successful.")
+				// You might want to log which repo synced, but Sync() logs usually cover it
+			}
 		}
 	}()
 
