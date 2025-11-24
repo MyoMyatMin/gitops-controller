@@ -79,6 +79,47 @@ func (r *Repository) Pull() error {
 	return nil
 }
 
+func (r *Repository) HasChanges() (bool, error) {
+	repo, err := git.PlainOpen(r.LocalPath)
+	if err != nil {
+		return false, fmt.Errorf("error opening repo: %w", err)
+	}
+
+	remote, err := repo.Remote("origin")
+	if err != nil {
+		return false, fmt.Errorf("error getting remote: %w", err)
+	}
+
+	err = remote.Fetch(&git.FetchOptions{
+		RemoteName: "origin",
+	})
+
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return false, fmt.Errorf("error fetching: %w", err)
+	}
+
+	headRef, err := repo.Head()
+	if err != nil {
+		return false, fmt.Errorf("error getting HEAD: %w", err)
+	}
+
+	remoteRefName := plumbing.NewRemoteReferenceName("origin", r.Branch)
+	remoteRef, err := repo.Reference(remoteRefName, true)
+	if err != nil {
+		return false, fmt.Errorf("error getting remote ref %s: %w", remoteRefName, err)
+	}
+
+	if headRef.Hash() != remoteRef.Hash() {
+		log.WithFields(logrus.Fields{
+			"local_sha":  headRef.Hash().String(),
+			"remote_sha": remoteRef.Hash().String(),
+		}).Info("Git changes detected (hashes differ)")
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func (r *Repository) GetLatestCommit() (string, error) {
 	repo, err := git.PlainOpen(r.LocalPath)
 	if err != nil {

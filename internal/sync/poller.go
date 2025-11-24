@@ -26,8 +26,29 @@ func NewPoller(engine *Engine, interval time.Duration) *Poller {
 }
 
 func (p *Poller) Start() {
-
 	log.Infof("Starting poller: checking for updates every %s", p.interval)
+
+	p.wg.Add(1)
+	defer p.wg.Done()
+
+	p.poll()
+
+	ticker := time.NewTicker(p.interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			p.poll()
+		case <-p.stopCh:
+			log.Info("Stopping poller.")
+			return
+		}
+	}
+}
+
+func (p *Poller) poll() {
+	log.Info("Polling for changes....")
 
 	retryConfig := RetryConfig{
 		MaxRetries:   5,
@@ -35,52 +56,45 @@ func (p *Poller) Start() {
 		MaxDelay:     30 * time.Second,
 	}
 
-	p.wg.Add(1)
-	defer p.wg.Done()
-	ticker := time.NewTicker(p.interval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			log.Info("Polling for changes....")
-			latestSHA, err := p.engine.gitRepo.GetLatestCommit()
-			if err != nil {
-				log.Errorf("Error checking git commit: %v", err)
-				continue
-			}
-
-			if p.lastCommitSHA != "" && p.lastCommitSHA == latestSHA {
-				log.Info("No new commits found.")
-				continue
-			}
-
-			log.WithFields(logrus.Fields{
-				"new_commit": latestSHA,
-				"old_commit": p.lastCommitSHA,
-			}).Info("New commit found. Starting to sync.")
-
-			result, err := p.engine.SyncWithRetry(retryConfig)
-			if err != nil {
-				log.Errorf("Sync failed: %v", err)
-			} else {
-
-				log.WithFields(logrus.Fields{
-					"commit":  result.CommitSHA,
-					"updated": len(result.Updated),
-					"deleted": len(result.Deleted),
-					"errors":  len(result.Errors),
-				}).Info("Sync complete")
-			}
-			if err == nil {
-				p.lastCommitSHA = latestSHA
-			}
-
-		case <-p.stopCh:
-			log.Info("Stopping poller.")
-			return
-		}
+	hasChanges, err := p.engine.gitRepo.HasChanges()
+	if err != nil {
+		log.Errorf("Error checking for changes: %v", err)
+		return
 	}
+
+	if !hasChanges {
+		log.Info("No new commits found.")
+		return
+	}
+
+	if err := p.engine.gitRepo.Pull(); err != nil {
+		log.Errorf("Error pulling repo: %v", err)
+		return
+	}
+
+	latestSHA, err := p.engine.gitRepo.GetLatestCommit()
+	if err != nil {
+		log.Errorf("Error checking git commit: %v", err)
+		return
+	}
+
+	log.WithFields(logrus.Fields{
+		"new_commit": latestSHA,
+	}).Info("New commit found. Starting to sync.")
+
+	result, err := p.engine.SyncWithRetry(retryConfig)
+	if err != nil {
+		log.Errorf("Sync failed: %v", err)
+	} else {
+		log.WithFields(logrus.Fields{
+			"commit":  result.CommitSHA,
+			"updated": len(result.Updated),
+			"deleted": len(result.Deleted),
+			"errors":  len(result.Errors),
+		}).Info("Sync complete")
+	}
+
+	p.lastCommitSHA = latestSHA
 }
 
 func (p *Poller) Stop() {
